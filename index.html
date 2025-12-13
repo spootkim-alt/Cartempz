@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Ma carte interactive</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 600px; width: 100%; }
+  </style>
+</head>
+<body>
+  <h2>Ma carte interactive</h2>
+  <div id="map"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    // Initialiser la carte centrée sur la France
+    var map = L.map('map').setView([46.5, 2], 6);
+
+    // Ajouter OpenStreetMap comme fond
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Exemple de marqueurs
+    var markers = [
+      {lat: 48.8566, lon: 2.3522, name: "Paris"},
+      {lat: 43.6045, lon: 1.4440, name: "Toulouse"}
+    ];
+
+    markers.forEach(function(m){
+      L.marker([m.lat, m.lon]).addTo(map)
+        .bindPopup(m.name)
+        .bindTooltip(m.name, {permanent: true, direction: 'top'});
+    });
+  </script>
+</body>
+</html>
