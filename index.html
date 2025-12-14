@@ -36,7 +36,7 @@ const map = L.map('map', { preferCanvas: true })
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap'
 }).addTo(map);
-
+const coordIndex = {};
 // ------------------
 // 2. Charger le CSV
 // ------------------
