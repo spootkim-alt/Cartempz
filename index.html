@@ -1,42 +1,77 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Ma carte interactive</title>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8">
+<title>Carte CSV Leaflet</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <style>
-    #map { height: 600px; width: 100%; }
-  </style>
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<!-- CSV Parser -->
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
+<!-- Export PNG -->
+<script src="https://unpkg.com/leaflet-image/leaflet-image.js"></script>
+
+<style>
+#map { width:100%; height:90vh; }
+button { padding:8px; margin:5px; }
+</style>
 </head>
+
 <body>
-  <h2>Ma carte interactive</h2>
-  <div id="map"></div>
 
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script>
-    // Initialiser la carte centrée sur la France
-    var map = L.map('map').setView([46.5, 2], 6);
+<button onclick="exportPNG()">Exporter PNG</button>
+<div id="map"></div>
 
-    // Ajouter OpenStreetMap comme fond
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
-    }).addTo(map);
+<script>
+// ------------------
+// 1. Carte
+// ------------------
+const map = L.map('map', { preferCanvas: true })
+  .setView([46.5, 2], 6);
 
-    // Exemple de marqueurs
-    var markers = [
-      {lat: 48.8566, lon: 2.3522, name: "Paris"},
-      {lat: 43.6045, lon: 1.4440, name: "Toulouse"}
-    ];
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap'
+}).addTo(map);
 
-    markers.forEach(function(m){
-      L.marker([m.lat, m.lon]).addTo(map)
-        .bindPopup(m.name)
-        .bindTooltip(m.name, {permanent: true, direction: 'top'});
-    });
-  </script>
+// ------------------
+// 2. Charger le CSV
+// ------------------
+Papa.parse('points.csv', {
+  download: true,
+  header: true,
+  step: function(row) {
+    const lat = parseFloat(row.data.lat);
+    const lon = parseFloat(row.data.lon);
+    const label = row.data.label || '';
+
+    if (!isNaN(lat) && !isNaN(lon)) {
+      L.circleMarker([lat, lon], {
+        radius: 2,
+        color: 'red',
+        fillOpacity: 0.6
+      })
+      .addTo(map)
+      .bindTooltip(label, { direction:'top' });
+    }
+  }
+});
+
+// ------------------
+// 3. Export PNG
+// ------------------
+function exportPNG() {
+  leafletImage(map, function(err, canvas) {
+    const link = document.createElement('a');
+    link.href = canvas.toDataURL("image/png");
+    link.download = "carte.png";
+    link.click();
+  });
+}
+</script>
+
 </body>
 </html>
