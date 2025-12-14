@@ -28,7 +28,7 @@ button { padding:8px; margin:5px; }
 
 <script>
 // ------------------
-// 0. Fonctions & variables
+// 0. Fonction pour URL params
 // ------------------
 function getURLParams() {
   const params = new URLSearchParams(window.location.search);
@@ -40,7 +40,7 @@ function getURLParams() {
 }
 
 const params = getURLParams();
-const coordIndex = {}; // Pour le jitter
+const coordIndex = {}; // nécessaire pour le jitter
 
 // ------------------
 // 1. Carte
@@ -63,7 +63,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap'
 }).addTo(map);
 
-// Marqueur utilisateur si URL fournie
+// Marqueur utilisateur si paramètre URL
 if (!isNaN(params.lat) && !isNaN(params.lon)) {
   L.marker([params.lat, params.lon], { title: "Position transmise" })
     .addTo(map)
@@ -71,22 +71,24 @@ if (!isNaN(params.lat) && !isNaN(params.lon)) {
 }
 
 // ------------------
-// 2. Charger le CSV
+// 2. Charger CSV
 // ------------------
 Papa.parse('points.csv', {
   download: true,
   header: true,
   delimiter: ";",
   step: function(row) {
+
     const lat = parseFloat(row.data.latitude);
     const lon = parseFloat(row.data.Longitude);
     const label = row.data.Référence || '';
 
     if (!isNaN(lat) && !isNaN(lon)) {
+
       const key = lat + ',' + lon;
       coordIndex[key] = (coordIndex[key] || 0) + 1;
 
-      const offset = coordIndex[key] * 0.00002;
+      const offset = coordIndex[key] * 0.00002; // ~2m de jitter
 
       L.circleMarker([lat + offset, lon + offset], {
         radius: 3,
