@@ -46,20 +46,29 @@ Papa.parse('points.csv', {
   delimiter: ";",   // ← INDISPENSABLE
   step: function(row) {
 
-    const lat = parseFloat(row.data.latitude);
-    const lon = parseFloat(row.data.Longitude);
-    const label = row.data.Référence || '';
+  const lat = parseFloat(row.data.latitude);
+  const lon = parseFloat(row.data.Longitude);
+  const label = row.data.Référence || '';
 
-    if (!isNaN(lat) && !isNaN(lon)) {
-      L.circleMarker([lat, lon], {
-        radius: 3,
-        color: 'red',
-        fillOpacity: 0.6
-      })
-      .addTo(map)
-      .bindTooltip(label, { direction: 'top' });
-    }
+  if (!isNaN(lat) && !isNaN(lon)) {
+
+    const key = lat + ',' + lon;
+
+    // Compteur pour ce point GPS
+    coordIndex[key] = (coordIndex[key] || 0) + 1;
+
+    // Décalage progressif (≈ 2–3 mètres)
+    const offset = coordIndex[key] * 0.00002;
+
+    L.circleMarker([lat + offset, lon + offset], {
+      radius: 3,
+      color: 'red',
+      fillOpacity: 0.6
+    })
+    .addTo(map)
+    .bindTooltip(label, { direction: 'top' });
   }
+}
 });
 // ------------------
 // 3. Export PNG
