@@ -43,23 +43,24 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 Papa.parse('points.csv', {
   download: true,
   header: true,
+  delimiter: ";",   // ← INDISPENSABLE
   step: function(row) {
+
     const lat = parseFloat(row.data.latitude);
     const lon = parseFloat(row.data.Longitude);
     const label = row.data.Référence || '';
 
     if (!isNaN(lat) && !isNaN(lon)) {
       L.circleMarker([lat, lon], {
-        radius: 2,
+        radius: 3,
         color: 'red',
         fillOpacity: 0.6
       })
       .addTo(map)
-      .bindTooltip(label, { direction:'top' });
+      .bindTooltip(label, { direction: 'top' });
     }
   }
 });
-
 // ------------------
 // 3. Export PNG
 // ------------------
