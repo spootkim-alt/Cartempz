@@ -44,9 +44,9 @@ Papa.parse('points.csv', {
   download: true,
   header: true,
   step: function(row) {
-    const lat = parseFloat(row.data.lat);
-    const lon = parseFloat(row.data.lon);
-    const label = row.data.label || '';
+    const lat = parseFloat(row.data.latitude);
+    const lon = parseFloat(row.data.Longitude);
+    const label = row.data.Référence || '';
 
     if (!isNaN(lat) && !isNaN(lon)) {
       L.circleMarker([lat, lon], {
