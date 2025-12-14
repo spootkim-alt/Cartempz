@@ -28,10 +28,23 @@ button { padding:8px; margin:5px; }
 
 <script>
 // ------------------
+// 0. Fonctions & variables
+// ------------------
+function getURLParams() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    lat: parseFloat(params.get('lat')),
+    lon: parseFloat(params.get('lon')),
+    zoom: parseInt(params.get('zoom'))
+  };
+}
+
+const params = getURLParams();
+const coordIndex = {}; // Pour le jitter
+
+// ------------------
 // 1. Carte
 // ------------------
-const params = getURLParams();
-
 const defaultLat = 46.5;
 const defaultLon = 2;
 const defaultZoom = 6;
@@ -44,15 +57,17 @@ const map = L.map('map', { preferCanvas: true })
     (!isNaN(params.zoom))
       ? params.zoom
       : defaultZoom
-  );;
+  );
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap'
 }).addTo(map);
+
+// Marqueur utilisateur si URL fournie
 if (!isNaN(params.lat) && !isNaN(params.lon)) {
-  L.marker([params.lat, params.lon], {
-    title: "Position transmise"
-  }).addTo(map);
+  L.marker([params.lat, params.lon], { title: "Position transmise" })
+    .addTo(map)
+    .bindTooltip("Utilisateur", { permanent: true, direction: "top" });
 }
 
 // ------------------
@@ -61,33 +76,29 @@ if (!isNaN(params.lat) && !isNaN(params.lon)) {
 Papa.parse('points.csv', {
   download: true,
   header: true,
-  delimiter: ";",   // ← INDISPENSABLE
+  delimiter: ";",
   step: function(row) {
+    const lat = parseFloat(row.data.latitude);
+    const lon = parseFloat(row.data.Longitude);
+    const label = row.data.Référence || '';
 
-  const lat = parseFloat(row.data.latitude);
-  const lon = parseFloat(row.data.Longitude);
-  const label = row.data.Référence || '';
+    if (!isNaN(lat) && !isNaN(lon)) {
+      const key = lat + ',' + lon;
+      coordIndex[key] = (coordIndex[key] || 0) + 1;
 
-  if (!isNaN(lat) && !isNaN(lon)) {
+      const offset = coordIndex[key] * 0.00002;
 
-    const key = lat + ',' + lon;
-
-    // Compteur pour ce point GPS
-    coordIndex[key] = (coordIndex[key] || 0) + 1;
-
-    // Décalage progressif (≈ 2–3 mètres)
-    const offset = coordIndex[key] * 0.00002;
-
-    L.circleMarker([lat + offset, lon + offset], {
-      radius: 3,
-      color: 'red',
-      fillOpacity: 0.6
-    })
-    .addTo(map)
-    .bindTooltip(label, { direction: 'top' });
+      L.circleMarker([lat + offset, lon + offset], {
+        radius: 3,
+        color: 'red',
+        fillOpacity: 0.6
+      })
+      .addTo(map)
+      .bindTooltip(label, { direction: 'top' });
+    }
   }
-}
 });
+
 // ------------------
 // 3. Export PNG
 // ------------------
@@ -98,14 +109,6 @@ function exportPNG() {
     link.download = "carte.png";
     link.click();
   });
-}
-function getURLParams() {
-  const params = new URLSearchParams(window.location.search);
-  return {
-    lat: parseFloat(params.get('lat')),
-    lon: parseFloat(params.get('lon')),
-    zoom: parseInt(params.get('zoom'))
-  };
 }
 </script>
 
