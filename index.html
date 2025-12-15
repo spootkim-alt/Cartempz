@@ -82,6 +82,7 @@ Papa.parse('points.csv', {
     const lat = parseFloat(row.data.latitude);
     const lon = parseFloat(row.data.Longitude);
     const label = row.data.Référence || '';
+    const Adresse = row.data.Adresse;
 
     if (!isNaN(lat) && !isNaN(lon)) {
 
@@ -97,6 +98,13 @@ Papa.parse('points.csv', {
       })
       .addTo(map)
       .bindTooltip(label, { direction: 'top' });
+      // 🔵 Popup = fiche complète
+    .bindPopup(`
+      <b>Référence :</b> ${label}<br>
+      <b>Adresse :</b> ${row.data.Adresse}<br>
+      <b>Latitude :</b> ${lat}<br>
+      <b>Longitude :</b> ${lon}
+    `);
     }
   }
 });
