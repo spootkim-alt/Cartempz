@@ -28,7 +28,7 @@ button { padding:8px; margin:5px; }
 
 <script>
 // ------------------
-// 0. Fonction pour URL params
+// 0. Lire paramètres URL
 // ------------------
 function getURLParams() {
   const params = new URLSearchParams(window.location.search);
@@ -40,38 +40,37 @@ function getURLParams() {
 }
 
 const params = getURLParams();
-const coordIndex = {}; // nécessaire pour le jitter
+const coordIndex = {}; // pour gérer les points GPS identiques
 
 // ------------------
-// 1. Carte
+// 1. Initialiser la carte
 // ------------------
 const defaultLat = 46.5;
 const defaultLon = 2;
 const defaultZoom = 6;
 
-const map = L.map('map', { preferCanvas: true })
-  .setView(
-    (!isNaN(params.lat) && !isNaN(params.lon))
-      ? [params.lat, params.lon]
-      : [defaultLat, defaultLon],
-    (!isNaN(params.zoom))
-      ? params.zoom
-      : defaultZoom
-  );
+const map = L.map('map', { preferCanvas: true }).setView(
+  (!isNaN(params.lat) && !isNaN(params.lon))
+    ? [params.lat, params.lon]
+    : [defaultLat, defaultLon],
+  (!isNaN(params.zoom))
+    ? params.zoom
+    : defaultZoom
+);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap'
 }).addTo(map);
 
-// Marqueur utilisateur si paramètre URL
+// Marqueur utilisateur (si transmis via URL)
 if (!isNaN(params.lat) && !isNaN(params.lon)) {
-  L.marker([params.lat, params.lon], { title: "Position transmise" })
+  L.marker([params.lat, params.lon])
     .addTo(map)
     .bindTooltip("Utilisateur", { permanent: true, direction: "top" });
 }
 
 // ------------------
-// 2. Charger CSV
+// 2. Charger et afficher le CSV
 // ------------------
 Papa.parse('points.csv', {
   download: true,
@@ -82,14 +81,14 @@ Papa.parse('points.csv', {
     const lat = parseFloat(row.data.latitude);
     const lon = parseFloat(row.data.Longitude);
     const label = row.data.Référence || '';
-    const Adresse = row.data.Adresse;
+    const Adresse = row.data.Adresse || '';
 
     if (!isNaN(lat) && !isNaN(lon)) {
 
       const key = lat + ',' + lon;
       coordIndex[key] = (coordIndex[key] || 0) + 1;
 
-      const offset = coordIndex[key] * 0.00002; // ~2m de jitter
+      const offset = coordIndex[key] * 0.00002; // ~2 mètres
 
       L.circleMarker([lat + offset, lon + offset], {
         radius: 3,
@@ -97,14 +96,13 @@ Papa.parse('points.csv', {
         fillOpacity: 0.6
       })
       .addTo(map)
-      .bindTooltip(label, { direction: 'top' });
-      // 🔵 Popup = fiche complète
-    .bindPopup(`
-      <b>Référence :</b> ${label}<br>
-      <b>Adresse :</b> ${row.data.Adresse}<br>
-      <b>Latitude :</b> ${lat}<br>
-      <b>Longitude :</b> ${lon}
-    `);
+      .bindTooltip(label, { direction: 'top' })
+      .bindPopup(`
+        <b>Référence :</b> ${label}<br>
+        <b>Adresse :</b> ${Adresse}<br>
+        <b>Latitude :</b> ${lat}<br>
+        <b>Longitude :</b> ${lon}
+      `);
     }
   }
 });
@@ -114,6 +112,10 @@ Papa.parse('points.csv', {
 // ------------------
 function exportPNG() {
   leafletImage(map, function(err, canvas) {
+    if (err) {
+      console.error(err);
+      return;
+    }
     const link = document.createElement('a');
     link.href = canvas.toDataURL("image/png");
     link.download = "carte.png";
