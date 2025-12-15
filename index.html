@@ -98,10 +98,24 @@ Papa.parse('points.csv', {
       .addTo(map)
       .bindTooltip(label, { direction: 'top' })
       .bindPopup(`
-        <b>Référence :</b> ${label}<br>
-        <b>Adresse :</b> ${Adresse}<br>
-        <b>Latitude :</b> ${lat}<br>
-        <b>Longitude :</b> ${lon}
+        <div style="font-size:13px">
+          <b>Référence :</b> ${label}<br>
+          <b>Adresse :</b> ${Adresse}<br><br>
+      
+          <a href="https://www.google.com/maps?q=${lat},${lon}"
+             target="_blank"
+             style="
+               display:inline-block;
+               padding:6px 10px;
+               background:#1a73e8;
+               color:white;
+               text-decoration:none;
+               border-radius:4px;
+               font-size:12px;
+             ">
+             📍 Ouvrir dans Google Maps
+          </a>
+        </div>
       `);
     }
   }
