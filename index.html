@@ -98,25 +98,30 @@ Papa.parse('points.csv', {
       .addTo(map)
       .bindTooltip(label, { direction: 'top' })
       .bindPopup(`
-        <div style="font-size:13px">
+        <div style="font-size:13px; line-height:1.4;">
           <b>Référence :</b> ${label}<br>
           <b>Adresse :</b> ${Adresse}<br><br>
       
-          <a href="https://www.google.com/maps?q=${lat},${lon}"
-             target="_blank"
-             style="
-               display:inline-block;
-               padding:6px 10px;
-               background:#1a73e8;
-               color:white;
-               text-decoration:none;
-               border-radius:4px;
-               font-size:12px;
-             ">
-             📍 Ouvrir dans Google Maps
+          <a
+            href="https://www.google.com/maps?q=${lat},${lon}"
+            target="_blank"
+            style="
+              display:block;
+              text-align:center;
+              padding:8px;
+              background:#1a73e8;
+              color:#fff;
+              font-weight:bold;
+              text-decoration:none;
+              border-radius:5px;
+            ">
+            📍 Ouvrir dans Google Maps
           </a>
         </div>
-      `);
+      `, {
+        maxWidth: 300,
+        minWidth: 200
+      });
     }
   }
 });
