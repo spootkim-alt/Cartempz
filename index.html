@@ -23,7 +23,7 @@ button { padding:8px; margin:5px; }
 
 <body>
 
-<button onclick="exportPNG()">Exporter PNG</button>
+<button onclick="exportPNG()">Se localiser</button>
 <div id="map"></div>
 
 <script>
@@ -38,6 +38,37 @@ function getURLParams() {
     zoom: parseInt(params.get('zoom'))
   };
 }
+  function geolocateUser() {
+  if (!navigator.geolocation) {
+    alert("La géolocalisation n'est pas supportée par votre navigateur.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+
+      // Centrer la carte sur la position
+      map.setView([lat, lon], 14);
+
+      // Ajouter un marqueur
+      L.marker([lat, lon])
+        .addTo(map)
+        .bindTooltip("Vous êtes ici", { permanent: true, direction: "top" })
+        .bindPopup("🌍 Position actuelle")
+        .openPopup();
+    },
+    (err) => {
+      console.error(err);
+      alert("Impossible de récupérer votre position.");
+    },
+    { enableHighAccuracy: true }
+  );
+}
+
+// Optionnel : lancer automatiquement la géolocalisation à l'ouverture
+geolocateUser();
 
 const params = getURLParams();
 const coordIndex = {}; // pour gérer les points GPS identiques
