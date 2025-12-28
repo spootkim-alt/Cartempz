@@ -22,8 +22,9 @@ button { padding:8px; margin:5px; }
 </head>
 
 <body>
-
-<button onclick="exportPNG()">Se localiser</button>
+// Optionnel : lancer automatiquement la géolocalisation à l'ouverture
+geolocateUser();
+<button onclick="geolocateUser()">Se localiser</button>
 <div id="map"></div>
 
 <script>
@@ -67,8 +68,7 @@ function getURLParams() {
   );
 }
 
-// Optionnel : lancer automatiquement la géolocalisation à l'ouverture
-geolocateUser();
+
 
 const params = getURLParams();
 const coordIndex = {}; // pour gérer les points GPS identiques
