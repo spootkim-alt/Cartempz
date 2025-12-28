@@ -12,9 +12,6 @@
 <!-- CSV Parser -->
 <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
-<!-- Export PNG -->
-<script src="https://unpkg.com/leaflet-image/leaflet-image.js"></script>
-
 <style>
 #map { width:100%; height:90vh; }
 button { padding:8px; margin:5px; }
@@ -23,7 +20,7 @@ button { padding:8px; margin:5px; }
 
 <body>
 
-<button onclick="geolocateUser()">Se localiser User</button>
+<button onclick="geolocateUser()">Se localiser</button>
 <div id="map"></div>
 
 <script>
@@ -38,36 +35,6 @@ function getURLParams() {
     zoom: parseInt(params.get('zoom'))
   };
 }
-  function geolocateUser() {
-  if (!navigator.geolocation) {
-    alert("La géolocalisation n'est pas supportée par votre navigateur.");
-    return;
-  }
-
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      const lat = position.coords.latitude;
-      const lon = position.coords.longitude;
-
-      // Centrer la carte sur la position
-      map.setView([lat, lon], 14);
-
-      // Ajouter un marqueur
-      L.marker([lat, lon])
-        .addTo(map)
-        .bindTooltip("Vous êtes ici", { permanent: true, direction: "top" })
-        .bindPopup("🌍 Position actuelle")
-        .openPopup();
-    },
-    (err) => {
-      console.error(err);
-      alert("Impossible de récupérer votre position.");
-    },
-    { enableHighAccuracy: true }
-  );
-}
-
-
 
 const params = getURLParams();
 const coordIndex = {}; // pour gérer les points GPS identiques
@@ -107,17 +74,14 @@ Papa.parse('points.csv', {
   header: true,
   delimiter: ";",
   step: function(row) {
-
     const lat = parseFloat(row.data.latitude);
     const lon = parseFloat(row.data.Longitude);
     const label = row.data.Référence || '';
     const Adresse = row.data.Adresse || '';
 
     if (!isNaN(lat) && !isNaN(lon)) {
-
       const key = lat + ',' + lon;
       coordIndex[key] = (coordIndex[key] || 0) + 1;
-
       const offset = coordIndex[key] * 0.00002; // ~2 mètres
 
       L.circleMarker([lat + offset, lon + offset], {
@@ -131,7 +95,6 @@ Papa.parse('points.csv', {
         <div style="font-size:13px; line-height:1.4;">
           <b>Référence :</b> ${label}<br>
           <b>Adresse :</b> ${Adresse}<br><br>
-      
           <a
             href="https://www.google.com/maps?q=${lat},${lon}"
             target="_blank"
@@ -157,20 +120,40 @@ Papa.parse('points.csv', {
 });
 
 // ------------------
-// 3. Export PNG
+// 3. Géolocalisation utilisateur
 // ------------------
-function exportPNG() {
-  leafletImage(map, function(err, canvas) {
-    if (err) {
+function geolocateUser() {
+  if (!navigator.geolocation) {
+    alert("La géolocalisation n'est pas supportée par votre navigateur.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+
+      // Centrer la carte sur la position
+      map.setView([lat, lon], 14);
+
+      // Ajouter un marqueur
+      L.marker([lat, lon])
+        .addTo(map)
+        .bindTooltip("Vous êtes ici", { permanent: true, direction: "top" })
+        .bindPopup("🌍 Position actuelle")
+        .openPopup();
+    },
+    (err) => {
       console.error(err);
-      return;
-    }
-    const link = document.createElement('a');
-    link.href = canvas.toDataURL("image/png");
-    link.download = "carte.png";
-    link.click();
-  });
+      alert("Impossible de récupérer votre position.");
+    },
+    { enableHighAccuracy: true }
+  );
 }
+
+// Optionnel : lancer automatiquement la géolocalisation à l'ouverture
+geolocateUser();
+
 </script>
 
 </body>
