@@ -1,141 +1,234 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="utf-8">
-    <title>Carte Hakim</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #0f1923; }
-        #map { width: 100%; height: 100vh; }
+// ─────────────────────────────────────────────
+// LOADING UI
+// ─────────────────────────────────────────────
+const prog    = document.getElementById('prog');
+const ovNote  = document.getElementById('ov-note');
+const overlay = document.getElementById('overlay');
 
-        /* ── Overlay ── */
-        #overlay {
-            position: fixed; inset: 0;
-            background: rgba(10, 18, 28, 0.93);
-            backdrop-filter: blur(8px);
-            z-index: 9999;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center; gap: 24px;
-            transition: opacity 0.5s ease;
+function setStep(n, note) {
+    for (let i = 1; i < n; i++) {
+        const el = document.getElementById('s' + i);
+        el.classList.remove('active'); el.classList.add('done');
+        el.querySelector('.step-icon').textContent = '✅';
+    }
+    const cur = document.getElementById('s' + n);
+    if (cur) cur.classList.add('active');
+    prog.style.width = ({ 1: '10', 2: '40', 3: '75' }[n] || '0') + '%';
+    if (note) ovNote.textContent = note;
+}
+
+function doneLoading(note) {
+    [1,2,3].forEach(i => {
+        const el = document.getElementById('s' + i);
+        el.classList.remove('active'); el.classList.add('done');
+        el.querySelector('.step-icon').textContent = '✅';
+    });
+    prog.style.width = '100%';
+    ovNote.textContent = note || 'Prêt !';
+    setTimeout(() => overlay.classList.add('hidden'), 600);
+}
+
+// ─────────────────────────────────────────────
+// CONSTANTES
+// ─────────────────────────────────────────────
+const RAYON_KM    = 100;
+const DEFAULT_LAT = 46.5;
+const DEFAULT_LON = 2;
+
+// ─────────────────────────────────────────────
+// ÉTAPE 1 — CARTE  (preferCanvas = rendu unique sur <canvas>)
+// ─────────────────────────────────────────────
+setStep(1, 'Initialisation de la carte…');
+
+const urlP = new URLSearchParams(window.location.search);
+const uLat = parseFloat(urlP.get('lat'));
+const uLon = parseFloat(urlP.get('lon'));
+const uZoom = parseInt(urlP.get('zoom'));
+
+const map = L.map('map', {
+    preferCanvas: true,   // ← CRITIQUE : 1 canvas au lieu de N éléments DOM
+    zoomSnap: 0.5
+}).setView(
+    (!isNaN(uLat) && !isNaN(uLon)) ? [uLat, uLon] : [DEFAULT_LAT, DEFAULT_LON],
+    !isNaN(uZoom) ? uZoom : 6
+);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap', maxZoom: 19
+}).addTo(map);
+
+if (!isNaN(uLat) && !isNaN(uLon)) {
+    L.marker([uLat, uLon]).addTo(map)
+        .bindTooltip("Utilisateur", { permanent: true, direction: "top" });
+}
+
+// ─────────────────────────────────────────────
+// ÉTAT GLOBAL
+// ─────────────────────────────────────────────
+let userLat = null, userLon = null, userMarker = null;
+
+// Couche de markers (canvas)
+const markersLayer = L.layerGroup().addTo(map);
+
+// Index pour éviter la superposition exacte
+const coordIdx = {};
+
+// ─────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────
+function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371, d2r = Math.PI / 180;
+    const dLat = (lat2 - lat1) * d2r;
+    const dLon = (lon2 - lon1) * d2r;
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(lat1*d2r)*Math.cos(lat2*d2r)*Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// Tooltips uniquement au survol (hover), jamais permanentes
+function syncTooltips() { /* désactivé — tooltips hover uniquement */ }
+
+// Créer un marker — popup en LAZY (construit au premier clic seulement)
+function creerMarker(lat, lon, label, adresse) {
+    const key = lat + ',' + lon;
+    coordIdx[key] = (coordIdx[key] || 0) + 1;
+    const off = coordIdx[key] * 0.00002;
+
+    const m = L.circleMarker([lat + off, lon + off], {
+        radius: 10,
+        color: '#c0392b',
+        weight: 2,
+        fillColor: '#e74c3c',
+        fillOpacity: 0.9,
+        interactive: true
+    });
+
+    // Tooltip au survol (léger — pas de DOM permanent)
+    m.bindTooltip(label, {
+        permanent: false,
+        direction: 'top',
+        offset: [0, -10],
+        className: 'tip-arm'
+    });
+
+    // Popup LAZY : le HTML n'est construit qu'au premier clic
+    let popupReady = false;
+    m.on('click', () => {
+        if (!popupReady) {
+            m.bindPopup(`
+                <div style="font-family:'Segoe UI',sans-serif;font-size:13px;line-height:1.6">
+                  <b>📦 ${label}</b><br>
+                  <span style="color:#555">📍 ${adresse}</span><br><br>
+                  <a href="https://www.google.com/maps?q=${lat},${lon}"
+                     target="_blank"
+                     style="display:block;text-align:center;padding:8px;background:#1a73e8;
+                            color:#fff;font-weight:bold;text-decoration:none;border-radius:6px">
+                     🗺️ Ouvrir dans Google Maps
+                  </a>
+                </div>`, { maxWidth: 280, minWidth: 190 });
+            popupReady = true;
         }
-        #overlay.hidden { opacity: 0; pointer-events: none; }
+        m.openPopup();
+    });
 
-        .ov-title {
-            font-family: 'Segoe UI', sans-serif;
-            font-size: 22px; font-weight: 700;
-            color: #e74c3c;
-            letter-spacing: 1px;
-            text-shadow: 0 0 24px rgba(231,76,60,0.4);
+    markersLayer.addLayer(m);
+}
+
+// ─────────────────────────────────────────────
+// ÉTAPE 3 — CHARGEMENT CSV FILTRÉ
+// Astuce : on lit tout en `complete` (1 seule opération JS),
+// puis on filtre et crée les markers par batch via requestAnimationFrame
+// pour ne pas bloquer le thread UI.
+// ─────────────────────────────────────────────
+function chargerCSV(refLat, refLon) {
+    setStep(3, 'Téléchargement des données…');
+
+    Papa.parse('points.csv', {
+        download: true,
+        header: true,
+        delimiter: ";",
+        // complete = lecture unique en mémoire (bien plus rapide que step)
+        complete: function(results) {
+            ovNote.textContent = 'Filtrage des armoires proches…';
+            prog.style.width = '80%';
+
+            // Filtrer en mémoire (rapide, pas de DOM)
+            const rows = results.data.filter(r => {
+                const lat = parseFloat(r.latitude);
+                const lon = parseFloat(r.Longitude);
+                if (isNaN(lat) || isNaN(lon)) return false;
+                return haversine(refLat, refLon, lat, lon) <= RAYON_KM;
+            });
+
+            // Insérer les markers par lots de 200 via rAF
+            // → le navigateur peut respirer entre chaque lot
+            let i = 0;
+            const BATCH = 200;
+
+            function insertBatch() {
+                const end = Math.min(i + BATCH, rows.length);
+                for (; i < end; i++) {
+                    const r = rows[i];
+                    creerMarker(
+                        parseFloat(r.latitude),
+                        parseFloat(r.Longitude),
+                        r.Référence || '',
+                        r.Adresse   || ''
+                    );
+                }
+                if (i < rows.length) {
+                    ovNote.textContent = `Affichage… ${i} / ${rows.length} armoires`;
+                    requestAnimationFrame(insertBatch);
+                } else {
+                    syncTooltips();
+                    doneLoading(`✅ ${rows.length} armoire(s) chargée(s) dans un rayon de ${RAYON_KM} km.`);
+                }
+            }
+
+            requestAnimationFrame(insertBatch);
+        },
+        error: function(err) {
+            ovNote.textContent = '❌ Erreur de chargement du CSV.';
+            console.error(err);
         }
+    });
+}
 
-        .ov-card {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.09);
-            border-radius: 14px;
-            padding: 24px 32px;
-            display: flex; flex-direction: column;
-            align-items: center; gap: 16px;
-            min-width: 280px; max-width: 340px;
-        }
+// ─────────────────────────────────────────────
+// ÉTAPE 2 — GÉOLOCALISATION
+// ─────────────────────────────────────────────
+function recentrer() {
+    if (userLat !== null) {
+        map.setView([userLat, userLon], 13);
+        if (userMarker) userMarker.openPopup();
+    }
+}
 
-        .steps { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+setTimeout(() => {
+    setStep(2, 'Demande de géolocalisation…');
 
-        .step {
-            display: flex; align-items: center; gap: 12px;
-            opacity: 0.3;
-            transition: opacity 0.35s, transform 0.35s;
-            font-family: 'Segoe UI', sans-serif;
-        }
-        .step.active  { opacity: 1; transform: translateX(4px); }
-        .step.done    { opacity: 0.55; }
+    if (!navigator.geolocation) {
+        ovNote.textContent = 'Géolocalisation non disponible — France entière.';
+        chargerCSV(DEFAULT_LAT, DEFAULT_LON);
+        return;
+    }
 
-        .step-icon {
-            width: 34px; height: 34px; border-radius: 50%;
-            background: rgba(231,76,60,0.12);
-            border: 2px solid rgba(231,76,60,0.25);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 15px; flex-shrink: 0;
-            transition: background 0.3s, border-color 0.3s;
-        }
-        .step.active .step-icon {
-            background: rgba(231,76,60,0.28);
-            border-color: #e74c3c;
-            animation: pulse 1.2s infinite;
-        }
-        .step.done .step-icon { background: rgba(46,204,113,0.18); border-color: #2ecc71; }
-
-        @keyframes pulse {
-            0%   { box-shadow: 0 0 0 0 rgba(231,76,60,0.5); }
-            70%  { box-shadow: 0 0 0 10px rgba(231,76,60,0); }
-            100% { box-shadow: 0 0 0 0 rgba(231,76,60,0); }
-        }
-
-        .step-label { color: #d0dde8; font-size: 13px; font-weight: 500; }
-        .step.active .step-label { color: #fff; font-weight: 600; }
-        .step.done   .step-label { color: #2ecc71; }
-
-        .prog-wrap {
-            width: 100%; height: 4px;
-            background: rgba(255,255,255,0.07);
-            border-radius: 99px; overflow: hidden;
-        }
-        .prog-fill {
-            height: 100%; width: 0%;
-            background: linear-gradient(90deg, #e74c3c, #e67e22);
-            border-radius: 99px;
-            transition: width 0.4s ease;
-        }
-
-        #ov-note {
-            color: rgba(255,255,255,0.35);
-            font-size: 12px; font-family: 'Segoe UI', sans-serif;
-            text-align: center;
-        }
-
-        /* ── Bouton flottant ── */
-        #btn-loc {
-            position: fixed; bottom: 20px; right: 20px; z-index: 1000;
-            background: #e74c3c; color: #fff; border: none; border-radius: 50px;
-            padding: 11px 18px; font-size: 13px; font-weight: 600;
-            cursor: pointer; box-shadow: 0 4px 14px rgba(231,76,60,0.4);
-            font-family: 'Segoe UI', sans-serif;
-            transition: background 0.2s, transform 0.2s;
-        }
-        #btn-loc:hover { background: #c0392b; transform: translateY(-2px); }
-
-        /* ── Tooltip armoires ── */
-        .tip-arm {
-            background: rgba(18,18,26,0.92) !important;
-            color: #fff !important; border: 1px solid rgba(231,76,60,0.35) !important;
-            border-radius: 5px !important; padding: 3px 8px !important;
-            font-size: 11px !important; font-weight: 600 !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
-            white-space: nowrap !important;
-        }
-        .tip-arm::before { border-top-color: rgba(18,18,26,0.92) !important; }
-    </style>
-</head>
-<body>
-    <div id="overlay">
-        <div class="ov-title">📦 Carte Armoires</div>
-        <div class="ov-card">
-            <div class="steps">
-                <div class="step" id="s1"><div class="step-icon">🗺️</div><div class="step-label">Initialisation de la carte</div></div>
-                <div class="step" id="s2"><div class="step-icon">📍</div><div class="step-label">Localisation de votre position</div></div>
-                <div class="step" id="s3"><div class="step-icon">📡</div><div class="step-label">Chargement des armoires proches</div></div>
-            </div>
-            <div class="prog-wrap"><div class="prog-fill" id="prog"></div></div>
-            <div id="ov-note">Démarrage…</div>
-        </div>
-    </div>
-
-    <div id="map"></div>
-    <button id="btn-loc" onclick="recentrer()">📍 Me localiser</button>
-
-    <script src="script.js"></script>
-</body>
-</html>
+    navigator.geolocation.getCurrentPosition(
+        pos => {
+            userLat = pos.coords.latitude;
+            userLon = pos.coords.longitude;
+            map.setView([userLat, userLon], 13);
+            userMarker = L.marker([userLat, userLon]).addTo(map)
+                .bindTooltip("Vous êtes ici", { permanent: true, direction: "top" })
+                .bindPopup("🌍 Votre position actuelle");
+            ovNote.textContent = 'Position trouvée !';
+            chargerCSV(userLat, userLon);
+        },
+        err => {
+            console.warn('Géoloc échouée :', err.message);
+            ovNote.textContent = 'Position indisponible — chargement centré France…';
+            chargerCSV(DEFAULT_LAT, DEFAULT_LON);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+}, 350);
