@@ -204,12 +204,52 @@ function recentrer() {
     }
 }
 
-setTimeout(() => {
+// ─────────────────────────────────────────────
+// Marque l'étape 2 en rouge (échec géoloc)
+// ─────────────────────────────────────────────
+function stepEchec(msg) {
+    const el = document.getElementById('s2');
+    el.classList.remove('active');
+    el.querySelector('.step-icon').textContent = '❌';
+    el.querySelector('.step-label').textContent = msg;
+    el.querySelector('.step-label').style.color = '#e74c3c';
+    el.style.opacity = '1';
+
+    // Bouton "Réessayer"
+    const btn = document.createElement('button');
+    btn.textContent = '🔄 Réessayer la localisation';
+    btn.style.cssText = `
+        margin-top:4px; padding:8px 16px; border:none; border-radius:8px;
+        background:#e74c3c; color:#fff; font-size:12px; font-weight:700;
+        cursor:pointer; font-family:'Segoe UI',sans-serif;
+        transition:background 0.2s;
+    `;
+    btn.onmouseenter = () => btn.style.background = '#c0392b';
+    btn.onmouseleave = () => btn.style.background = '#e74c3c';
+    btn.onclick = () => {
+        btn.remove();
+        // Réinitialiser l'étape 2
+        el.querySelector('.step-icon').textContent = '📍';
+        el.querySelector('.step-label').textContent = 'Localisation de votre position';
+        el.querySelector('.step-label').style.color = '';
+        demanderGeoloc();
+    };
+
+    // Insérer le bouton dans la card, après les steps
+    const card = document.querySelector('.ov-card');
+    card.insertBefore(btn, card.querySelector('.prog-wrap'));
+}
+
+// ─────────────────────────────────────────────
+// Demande de géolocalisation (réutilisable pour retry)
+// ─────────────────────────────────────────────
+function demanderGeoloc() {
     setStep(2, 'Demande de géolocalisation…');
 
     if (!navigator.geolocation) {
-        ovNote.textContent = 'Géolocalisation non disponible — France entière.';
-        chargerCSV(DEFAULT_LAT, DEFAULT_LON);
+        stepEchec('Géolocalisation non supportée');
+        ovNote.textContent = 'Toutes les armoires seront affichées.';
+        setTimeout(() => chargerCSV(DEFAULT_LAT, DEFAULT_LON, 20000), 1500);
         return;
     }
 
@@ -227,15 +267,21 @@ setTimeout(() => {
         err => {
             console.warn('Géoloc échouée :', err.message);
 
-            // Message explicatif selon la cause
             const msgs = {
-                1: '🚫 Géolocalisation refusée par le navigateur — toutes les armoires sont affichées.',
-                2: '📡 Signal GPS indisponible — toutes les armoires sont affichées.',
-                3: '⏱️ Délai de géolocalisation dépassé — toutes les armoires sont affichées.'
+                1: 'Accès refusé par le navigateur',
+                2: 'Signal GPS indisponible',
+                3: 'Délai de 25s dépassé'
             };
-            const msg = msgs[err.code] || '❌ Position indisponible — toutes les armoires sont affichées.';
+            stepEchec(msgs[err.code] || 'Position indisponible');
 
-            // Afficher un bandeau d'avertissement visible sur la carte
+            ovNote.textContent = 'Réessayez ou continuez sans localisation.';
+
+            // Bandeau sur la carte
+            const details = {
+                1: '🚫 Géolocalisation refusée — activez-la dans les paramètres du navigateur.',
+                2: '📡 Signal GPS indisponible — vérifiez votre connexion ou déplacez-vous.',
+                3: '⏱️ Délai de 25s dépassé — signal trop faible ou GPS désactivé.'
+            };
             const banner = document.createElement('div');
             banner.style.cssText = `
                 position:fixed; bottom:70px; left:50%; transform:translateX(-50%);
@@ -246,13 +292,12 @@ setTimeout(() => {
                 box-shadow:0 4px 16px rgba(0,0,0,0.4); text-align:center;
                 max-width:90vw; animation: fadeInUp 0.4s ease;
             `;
-            banner.textContent = msg;
+            banner.textContent = details[err.code] || '❌ Position indisponible — toutes les armoires affichées.';
             document.body.appendChild(banner);
-            setTimeout(() => banner.remove(), 6000);
-
-            // Charger TOUT (rayon = rayon de la Terre ≈ 20 000 km)
-            chargerCSV(DEFAULT_LAT, DEFAULT_LON, 20000);
+            setTimeout(() => banner.remove(), 8000);
         },
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 25000 }   // ← 25 secondes
     );
-}, 350);
+}
+
+setTimeout(demanderGeoloc, 350);
