@@ -140,7 +140,7 @@ function creerMarker(lat, lon, label, adresse) {
 // puis on filtre et crée les markers par batch via requestAnimationFrame
 // pour ne pas bloquer le thread UI.
 // ─────────────────────────────────────────────
-function chargerCSV(refLat, refLon) {
+function chargerCSV(refLat, refLon, rayon = RAYON_KM) {
     setStep(3, 'Téléchargement des données…');
 
     Papa.parse('points.csv', {
@@ -157,7 +157,7 @@ function chargerCSV(refLat, refLon) {
                 const lat = parseFloat(r.latitude);
                 const lon = parseFloat(r.Longitude);
                 if (isNaN(lat) || isNaN(lon)) return false;
-                return haversine(refLat, refLon, lat, lon) <= RAYON_KM;
+                return haversine(refLat, refLon, lat, lon) <= rayon;
             });
 
             // Insérer les markers par lots de 200 via rAF
@@ -181,7 +181,7 @@ function chargerCSV(refLat, refLon) {
                     requestAnimationFrame(insertBatch);
                 } else {
                     syncTooltips();
-                    doneLoading(`✅ ${rows.length} armoire(s) chargée(s) dans un rayon de ${RAYON_KM} km.`);
+                    doneLoading(`✅ ${rows.length} armoire(s) chargée(s)${rayon < 20000 ? ` dans un rayon de ${rayon} km` : ''}.`);
                 }
             }
 
@@ -226,8 +226,32 @@ setTimeout(() => {
         },
         err => {
             console.warn('Géoloc échouée :', err.message);
-            ovNote.textContent = 'Position indisponible — chargement centré France…';
-            chargerCSV(DEFAULT_LAT, DEFAULT_LON);
+
+            // Message explicatif selon la cause
+            const msgs = {
+                1: '🚫 Géolocalisation refusée par le navigateur — toutes les armoires sont affichées.',
+                2: '📡 Signal GPS indisponible — toutes les armoires sont affichées.',
+                3: '⏱️ Délai de géolocalisation dépassé — toutes les armoires sont affichées.'
+            };
+            const msg = msgs[err.code] || '❌ Position indisponible — toutes les armoires sont affichées.';
+
+            // Afficher un bandeau d'avertissement visible sur la carte
+            const banner = document.createElement('div');
+            banner.style.cssText = `
+                position:fixed; bottom:70px; left:50%; transform:translateX(-50%);
+                background:rgba(30,30,40,0.95); color:#f0c040;
+                border:1px solid rgba(240,192,64,0.4); border-radius:10px;
+                padding:12px 20px; font-family:'Segoe UI',sans-serif;
+                font-size:13px; font-weight:600; z-index:5000;
+                box-shadow:0 4px 16px rgba(0,0,0,0.4); text-align:center;
+                max-width:90vw; animation: fadeInUp 0.4s ease;
+            `;
+            banner.textContent = msg;
+            document.body.appendChild(banner);
+            setTimeout(() => banner.remove(), 6000);
+
+            // Charger TOUT (rayon = rayon de la Terre ≈ 20 000 km)
+            chargerCSV(DEFAULT_LAT, DEFAULT_LON, 20000);
         },
         { enableHighAccuracy: true, timeout: 10000 }
     );
