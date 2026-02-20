@@ -9,9 +9,9 @@ function getURLParams() {
         zoom: parseInt(params.get('zoom'))
     };
 }
-
 const params = getURLParams();
-const coordIndex = {}; // pour gérer les points GPS identiques
+const coordIndex = {};
+const allMarkers = []; // stocker tous les markers pour gérer les tooltips
 
 // ------------------
 // 1. Initialiser la carte
@@ -20,7 +20,7 @@ const defaultLat = 46.5;
 const defaultLon = 2;
 const defaultZoom = 6;
 
-const map = L.map('map', { preferCanvas: true }).setView(
+const map = L.map('map', { preferCanvas: false }).setView(
     (!isNaN(params.lat) && !isNaN(params.lon))
         ? [params.lat, params.lon]
         : [defaultLat, defaultLon],
@@ -41,7 +41,37 @@ if (!isNaN(params.lat) && !isNaN(params.lon)) {
 }
 
 // ------------------
-// 2. Charger et afficher le CSV
+// 2. Gestion des tooltips selon le zoom
+// Seuil : zoom >= 14 ≈ vue < 2km
+// ------------------
+const ZOOM_SEUIL = 14;
+
+function updateTooltips() {
+    const zoomActuel = map.getZoom();
+    const afficher = zoomActuel >= ZOOM_SEUIL;
+    allMarkers.forEach(marker => {
+        const tooltip = marker.getTooltip();
+        if (tooltip) {
+            if (afficher) {
+                tooltip.options.permanent = true;
+                // Forcer l'ouverture si pas déjà ouverte
+                if (!marker.isTooltipOpen()) {
+                    marker.openTooltip();
+                }
+            } else {
+                if (marker.isTooltipOpen()) {
+                    marker.closeTooltip();
+                }
+                tooltip.options.permanent = false;
+            }
+        }
+    });
+}
+
+map.on('zoomend', updateTooltips);
+
+// ------------------
+// 3. Charger et afficher le CSV
 // ------------------
 Papa.parse('points.csv', {
     download: true,
@@ -56,42 +86,76 @@ Papa.parse('points.csv', {
         if (!isNaN(lat) && !isNaN(lon)) {
             const key = lat + ',' + lon;
             coordIndex[key] = (coordIndex[key] || 0) + 1;
-            const offset = coordIndex[key] * 0.00002; // ~2 mètres
+            const offset = coordIndex[key] * 0.00002;
 
-            L.circleMarker([lat + offset, lon + offset], {
-                radius: 3,
-                color: 'red',
-                fillOpacity: 0.6
+            const marker = L.circleMarker([lat + offset, lon + offset], {
+                radius: 10,               // Gros point, facile à toucher
+                color: '#c0392b',         // Bordure rouge foncé
+                weight: 2,
+                fillColor: '#e74c3c',     // Rouge vif
+                fillOpacity: 0.9
             })
             .addTo(map)
-            .bindTooltip(label, { direction: 'top' })
+            .bindTooltip(label, {
+                permanent: false,         // géré dynamiquement par updateTooltips
+                direction: 'top',
+                offset: [0, -10],
+                className: 'tooltip-armoire'
+            })
             .bindPopup(`
-                <div style="font-size:13px; line-height:1.4;">
-                  <b>Référence :</b> ${label}<br>
-                  <b>Adresse :</b> ${Adresse}<br><br>
+                <div style="font-family:'Segoe UI',sans-serif;font-size:13px;line-height:1.6;">
+                  <b style="font-size:14px;">📦 ${label}</b><br>
+                  <span style="color:#555;">📍 ${Adresse}</span><br><br>
                   <a href="https://www.google.com/maps?q=${lat},${lon}" 
                      target="_blank" 
-                     style="display:block;text-align:center;padding:8px;background:#1a73e8;color:#fff;font-weight:bold;text-decoration:none;border-radius:5px;">
-                     📍 Ouvrir dans Google Maps
+                     style="display:block;text-align:center;padding:9px;background:#1a73e8;color:#fff;font-weight:bold;text-decoration:none;border-radius:6px;">
+                     🗺️ Ouvrir dans Google Maps
                   </a>
                 </div>
             `, {
                 maxWidth: 300,
                 minWidth: 200
             });
+
+            allMarkers.push(marker);
         }
+    },
+    complete: function() {
+        // Appliquer l'état initial des tooltips après chargement
+        updateTooltips();
     }
 });
 
 // ------------------
-// 3. Géolocalisation utilisateur
+// 4. Style CSS injecté pour les tooltips
+// ------------------
+const style = document.createElement('style');
+style.textContent = `
+    .tooltip-armoire {
+        background: rgba(30, 30, 30, 0.88);
+        color: #fff;
+        border: none;
+        border-radius: 5px;
+        padding: 4px 8px;
+        font-size: 12px;
+        font-weight: 600;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        white-space: nowrap;
+    }
+    .tooltip-armoire::before {
+        border-top-color: rgba(30, 30, 30, 0.88) !important;
+    }
+`;
+document.head.appendChild(style);
+
+// ------------------
+// 5. Géolocalisation utilisateur
 // ------------------
 function geolocateUser() {
     if (!navigator.geolocation) {
         alert("La géolocalisation n'est pas supportée par votre navigateur.");
         return;
     }
-
     navigator.geolocation.getCurrentPosition(
         (position) => {
             const lat = position.coords.latitude;
