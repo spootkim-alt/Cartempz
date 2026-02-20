@@ -86,7 +86,7 @@ if (!isNaN(urlParams.lat) && !isNaN(urlParams.lon)) {
 const coordIndex = {};
 const allMarkers = [];
 const ZOOM_SEUIL = 14;   // zoom ≥ 14 ≈ vue < 2 km → tooltips permanentes
-const RAYON_KM   = 100;  // filtre géographique
+const RAYON_KM   = 50;  // filtre géographique
 
 let userLat = null;
 let userLon = null;
@@ -131,7 +131,7 @@ function ajouterMarker(lat, lon, label, adresse) {
     const offset = coordIndex[key] * 0.00002;
 
     const marker = L.circleMarker([lat + offset, lon + offset], {
-        radius: 10,
+        radius: 6,
         color: '#c0392b',
         weight: 2,
         fillColor: '#e74c3c',
