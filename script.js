@@ -1,116 +1,99 @@
-// =====================================================
-// UTILITAIRES CHARGEMENT
-// =====================================================
-const overlay      = document.getElementById('loading-overlay');
-const progressFill = document.getElementById('progress-fill');
-const loaderNote   = document.getElementById('loader-note');
+// ─────────────────────────────────────────────
+// LOADING UI
+// ─────────────────────────────────────────────
+const prog    = document.getElementById('prog');
+const ovNote  = document.getElementById('ov-note');
+const overlay = document.getElementById('overlay');
 
-function setStep(num, note) {
-    // Marquer les étapes précédentes comme "done"
-    for (let i = 1; i < num; i++) {
-        const el = document.getElementById('step-' + i);
-        if (el) {
-            el.classList.remove('active');
-            el.classList.add('done');
-            el.querySelector('.step-icon').textContent = '✅';
-        }
+function setStep(n, note) {
+    for (let i = 1; i < n; i++) {
+        const el = document.getElementById('s' + i);
+        el.classList.remove('active'); el.classList.add('done');
+        el.querySelector('.step-icon').textContent = '✅';
     }
-    // Marquer l'étape courante comme active
-    const cur = document.getElementById('step-' + num);
+    const cur = document.getElementById('s' + n);
     if (cur) cur.classList.add('active');
-
-    // Progression par étape
-    const pct = { 1: 10, 2: 40, 3: 75 }[num] || 0;
-    progressFill.style.width = pct + '%';
-    if (note) loaderNote.textContent = note;
+    prog.style.width = ({ 1: '10', 2: '40', 3: '75' }[n] || '0') + '%';
+    if (note) ovNote.textContent = note;
 }
 
-function finishLoading() {
-    [1, 2, 3].forEach(i => {
-        const el = document.getElementById('step-' + i);
-        if (el) {
-            el.classList.remove('active');
-            el.classList.add('done');
-            el.querySelector('.step-icon').textContent = '✅';
-        }
+function doneLoading(note) {
+    [1,2,3].forEach(i => {
+        const el = document.getElementById('s' + i);
+        el.classList.remove('active'); el.classList.add('done');
+        el.querySelector('.step-icon').textContent = '✅';
     });
-    progressFill.style.width = '100%';
-    loaderNote.textContent = 'Carte prête !';
-    setTimeout(() => overlay.classList.add('hidden'), 700);
+    prog.style.width = '100%';
+    ovNote.textContent = note || 'Prêt !';
+    setTimeout(() => overlay.classList.add('hidden'), 600);
 }
 
-// =====================================================
-// 0. PARAMÈTRES URL
-// =====================================================
-function getURLParams() {
-    const p = new URLSearchParams(window.location.search);
-    return {
-        lat:  parseFloat(p.get('lat')),
-        lon:  parseFloat(p.get('lon')),
-        zoom: parseInt(p.get('zoom'))
-    };
-}
-const urlParams = getURLParams();
+// ─────────────────────────────────────────────
+// CONSTANTES
+// ─────────────────────────────────────────────
+const RAYON_KM    = 100;
+const ZOOM_SEUIL  = 14;       // zoom ≥ 14 → tooltips permanentes
+const DEFAULT_LAT = 46.5;
+const DEFAULT_LON = 2;
 
-// =====================================================
-// 1. INITIALISER LA CARTE  (Étape 1)
-// =====================================================
+// ─────────────────────────────────────────────
+// ÉTAPE 1 — CARTE  (preferCanvas = rendu unique sur <canvas>)
+// ─────────────────────────────────────────────
 setStep(1, 'Initialisation de la carte…');
 
-const defaultLat  = 46.5;
-const defaultLon  = 2;
-const defaultZoom = 6;
+const urlP = new URLSearchParams(window.location.search);
+const uLat = parseFloat(urlP.get('lat'));
+const uLon = parseFloat(urlP.get('lon'));
+const uZoom = parseInt(urlP.get('zoom'));
 
-const map = L.map('map', { preferCanvas: false }).setView(
-    (!isNaN(urlParams.lat) && !isNaN(urlParams.lon))
-        ? [urlParams.lat, urlParams.lon]
-        : [defaultLat, defaultLon],
-    !isNaN(urlParams.zoom) ? urlParams.zoom : defaultZoom
+const map = L.map('map', {
+    preferCanvas: true,   // ← CRITIQUE : 1 canvas au lieu de N éléments DOM
+    zoomSnap: 0.5
+}).setView(
+    (!isNaN(uLat) && !isNaN(uLon)) ? [uLat, uLon] : [DEFAULT_LAT, DEFAULT_LON],
+    !isNaN(uZoom) ? uZoom : 6
 );
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap',
-    maxZoom: 19
+    attribution: '© OpenStreetMap', maxZoom: 19
 }).addTo(map);
 
-// Marqueur URL éventuel
-if (!isNaN(urlParams.lat) && !isNaN(urlParams.lon)) {
-    L.marker([urlParams.lat, urlParams.lon])
-        .addTo(map)
+if (!isNaN(uLat) && !isNaN(uLon)) {
+    L.marker([uLat, uLon]).addTo(map)
         .bindTooltip("Utilisateur", { permanent: true, direction: "top" });
 }
 
-// =====================================================
-// VARIABLES GLOBALES
-// =====================================================
-const coordIndex = {};
-const allMarkers = [];
-const ZOOM_SEUIL = 14;   // zoom ≥ 14 ≈ vue < 2 km → tooltips permanentes
-const RAYON_KM   = 50;  // filtre géographique
+// ─────────────────────────────────────────────
+// ÉTAT GLOBAL
+// ─────────────────────────────────────────────
+let userLat = null, userLon = null, userMarker = null;
+let tooltipsActifs = false;
 
-let userLat = null;
-let userLon = null;
-let userMarker = null;
+// Couche de markers (canvas)
+const markersLayer = L.layerGroup().addTo(map);
 
-// =====================================================
+// Index pour éviter la superposition exacte
+const coordIdx = {};
+
+// ─────────────────────────────────────────────
 // HELPERS
-// =====================================================
-
-// Distance Haversine (km)
-function distanceKm(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+// ─────────────────────────────────────────────
+function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371, d2r = Math.PI / 180;
+    const dLat = (lat2 - lat1) * d2r;
+    const dLon = (lon2 - lon1) * d2r;
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(lat1*d2r)*Math.cos(lat2*d2r)*Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-// Gestion tooltips selon zoom
-function updateTooltips() {
+// Gestion tooltips au zoom — uniquement si zoom proche
+function syncTooltips() {
     const show = map.getZoom() >= ZOOM_SEUIL;
-    allMarkers.forEach(m => {
+    if (show === tooltipsActifs) return;   // pas de changement → rien à faire
+    tooltipsActifs = show;
+    markersLayer.eachLayer(m => {
+        if (!m.getTooltip) return;
         const tt = m.getTooltip();
         if (!tt) return;
         if (show) {
@@ -122,133 +105,149 @@ function updateTooltips() {
         }
     });
 }
-map.on('zoomend', updateTooltips);
+map.on('zoomend', syncTooltips);
 
-// Ajouter un marker armoire
-function ajouterMarker(lat, lon, label, adresse) {
+// Créer un marker — popup en LAZY (construit au premier clic seulement)
+function creerMarker(lat, lon, label, adresse) {
     const key = lat + ',' + lon;
-    coordIndex[key] = (coordIndex[key] || 0) + 1;
-    const offset = coordIndex[key] * 0.00002;
+    coordIdx[key] = (coordIdx[key] || 0) + 1;
+    const off = coordIdx[key] * 0.00002;
 
-    const marker = L.circleMarker([lat + offset, lon + offset], {
-        radius: 6,
+    const m = L.circleMarker([lat + off, lon + off], {
+        radius: 10,
         color: '#c0392b',
         weight: 2,
         fillColor: '#e74c3c',
-        fillOpacity: 0.9
-    })
-    .addTo(map)
-    .bindTooltip(label, {
+        fillOpacity: 0.9,
+        interactive: true
+    });
+
+    // Tooltip au survol (léger — pas de DOM permanent)
+    m.bindTooltip(label, {
         permanent: false,
         direction: 'top',
         offset: [0, -10],
-        className: 'tooltip-armoire'
-    })
-    .bindPopup(`
-        <div style="font-family:'Segoe UI',sans-serif;font-size:13px;line-height:1.6;">
-          <b style="font-size:14px;">📦 ${label}</b><br>
-          <span style="color:#555;">📍 ${adresse}</span><br><br>
-          <a href="https://www.google.com/maps?q=${lat},${lon}"
-             target="_blank"
-             style="display:block;text-align:center;padding:9px;background:#1a73e8;color:#fff;font-weight:bold;text-decoration:none;border-radius:6px;">
-             🗺️ Ouvrir dans Google Maps
-          </a>
-        </div>
-    `, { maxWidth: 300, minWidth: 200 });
+        className: 'tip-arm'
+    });
 
-    allMarkers.push(marker);
+    // Popup LAZY : le HTML n'est construit qu'au premier clic
+    let popupReady = false;
+    m.on('click', () => {
+        if (!popupReady) {
+            m.bindPopup(`
+                <div style="font-family:'Segoe UI',sans-serif;font-size:13px;line-height:1.6">
+                  <b>📦 ${label}</b><br>
+                  <span style="color:#555">📍 ${adresse}</span><br><br>
+                  <a href="https://www.google.com/maps?q=${lat},${lon}"
+                     target="_blank"
+                     style="display:block;text-align:center;padding:8px;background:#1a73e8;
+                            color:#fff;font-weight:bold;text-decoration:none;border-radius:6px">
+                     🗺️ Ouvrir dans Google Maps
+                  </a>
+                </div>`, { maxWidth: 280, minWidth: 190 });
+            popupReady = true;
+        }
+        m.openPopup();
+    });
+
+    markersLayer.addLayer(m);
 }
 
-// Bouton Me localiser (bouton flottant)
-function recentrerUtilisateur() {
-    if (userLat !== null && userLon !== null) {
-        map.setView([userLat, userLon], 13);
-        if (userMarker) userMarker.openPopup();
-    }
-}
-
-// =====================================================
-// 3. CHARGEMENT CSV FILTRÉ  (Étape 3)
-// =====================================================
-function chargerArmoiresProches(refLat, refLon) {
+// ─────────────────────────────────────────────
+// ÉTAPE 3 — CHARGEMENT CSV FILTRÉ
+// Astuce : on lit tout en `complete` (1 seule opération JS),
+// puis on filtre et crée les markers par batch via requestAnimationFrame
+// pour ne pas bloquer le thread UI.
+// ─────────────────────────────────────────────
+function chargerCSV(refLat, refLon) {
     setStep(3, 'Téléchargement des données…');
-
-    let count = 0;
-    let total = 0;
 
     Papa.parse('points.csv', {
         download: true,
         header: true,
         delimiter: ";",
-        step: function(row) {
-            total++;
-            const lat = parseFloat(row.data.latitude);
-            const lon = parseFloat(row.data.Longitude);
-            if (isNaN(lat) || isNaN(lon)) return;
+        // complete = lecture unique en mémoire (bien plus rapide que step)
+        complete: function(results) {
+            ovNote.textContent = 'Filtrage des armoires proches…';
+            prog.style.width = '80%';
 
-            const dist = distanceKm(refLat, refLon, lat, lon);
-            if (dist <= RAYON_KM) {
-                const label   = row.data.Référence || '';
-                const adresse = row.data.Adresse   || '';
-                ajouterMarker(lat, lon, label, adresse);
-                count++;
+            // Filtrer en mémoire (rapide, pas de DOM)
+            const rows = results.data.filter(r => {
+                const lat = parseFloat(r.latitude);
+                const lon = parseFloat(r.Longitude);
+                if (isNaN(lat) || isNaN(lon)) return false;
+                return haversine(refLat, refLon, lat, lon) <= RAYON_KM;
+            });
 
-                // Mise à jour visuelle tous les 50 points traités
-                if (total % 50 === 0) {
-                    loaderNote.textContent = `${count} armoire(s) trouvée(s) sur ${total} lues…`;
-                    const fill = Math.min(95, 75 + (count / 10));
-                    progressFill.style.width = fill + '%';
+            // Insérer les markers par lots de 200 via rAF
+            // → le navigateur peut respirer entre chaque lot
+            let i = 0;
+            const BATCH = 200;
+
+            function insertBatch() {
+                const end = Math.min(i + BATCH, rows.length);
+                for (; i < end; i++) {
+                    const r = rows[i];
+                    creerMarker(
+                        parseFloat(r.latitude),
+                        parseFloat(r.Longitude),
+                        r.Référence || '',
+                        r.Adresse   || ''
+                    );
+                }
+                if (i < rows.length) {
+                    ovNote.textContent = `Affichage… ${i} / ${rows.length} armoires`;
+                    requestAnimationFrame(insertBatch);
+                } else {
+                    syncTooltips();
+                    doneLoading(`✅ ${rows.length} armoire(s) chargée(s) dans un rayon de ${RAYON_KM} km.`);
                 }
             }
-        },
-        complete: function() {
-            loaderNote.textContent = `✅ ${count} armoire(s) dans un rayon de ${RAYON_KM} km.`;
-            updateTooltips();
-            finishLoading();
+
+            requestAnimationFrame(insertBatch);
         },
         error: function(err) {
-            loaderNote.textContent = '❌ Erreur lors du chargement du fichier CSV.';
+            ovNote.textContent = '❌ Erreur de chargement du CSV.';
             console.error(err);
         }
     });
 }
 
-// =====================================================
-// SÉQUENCE PRINCIPALE
-// =====================================================
+// ─────────────────────────────────────────────
+// ÉTAPE 2 — GÉOLOCALISATION
+// ─────────────────────────────────────────────
+function recentrer() {
+    if (userLat !== null) {
+        map.setView([userLat, userLon], 13);
+        if (userMarker) userMarker.openPopup();
+    }
+}
+
 setTimeout(() => {
     setStep(2, 'Demande de géolocalisation…');
 
     if (!navigator.geolocation) {
-        loaderNote.textContent = 'Géolocalisation non supportée — centré sur la France.';
-        chargerArmoiresProches(defaultLat, defaultLon);
+        ovNote.textContent = 'Géolocalisation non disponible — France entière.';
+        chargerCSV(DEFAULT_LAT, DEFAULT_LON);
         return;
     }
 
     navigator.geolocation.getCurrentPosition(
-        (position) => {
-            userLat = position.coords.latitude;
-            userLon = position.coords.longitude;
-
-            // Recentrer la carte sur l'utilisateur
+        pos => {
+            userLat = pos.coords.latitude;
+            userLon = pos.coords.longitude;
             map.setView([userLat, userLon], 13);
-
-            // Marqueur utilisateur
-            userMarker = L.marker([userLat, userLon])
-                .addTo(map)
+            userMarker = L.marker([userLat, userLon]).addTo(map)
                 .bindTooltip("Vous êtes ici", { permanent: true, direction: "top" })
                 .bindPopup("🌍 Votre position actuelle");
-
-            loaderNote.textContent = 'Position trouvée ! Chargement des armoires proches…';
-
-            // Charger uniquement les points dans les 100 km
-            chargerArmoiresProches(userLat, userLon);
+            ovNote.textContent = 'Position trouvée !';
+            chargerCSV(userLat, userLon);
         },
-        (err) => {
-            console.warn('Géolocalisation échouée :', err.message);
-            loaderNote.textContent = 'Position indisponible — chargement centré sur la France…';
-            chargerArmoiresProches(defaultLat, defaultLon);
+        err => {
+            console.warn('Géoloc échouée :', err.message);
+            ovNote.textContent = 'Position indisponible — chargement centré France…';
+            chargerCSV(DEFAULT_LAT, DEFAULT_LON);
         },
         { enableHighAccuracy: true, timeout: 10000 }
     );
-}, 400); // Petit délai pour laisser la carte s'afficher
+}, 350);
