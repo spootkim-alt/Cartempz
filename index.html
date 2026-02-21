@@ -1,458 +1,332 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="utf-8">
-<title>Loading Preview</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: #05080f;
-    display: flex; align-items: center; justify-content: center;
-    height: 100vh; overflow: hidden;
-    font-family: 'Courier New', monospace;
-  }
+  <meta charset="utf-8">
+  <title>Carte Armoires</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  #overlay {
-    position: relative; width: 100vw; height: 100vh;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    overflow: hidden; gap: 0;
-  }
+    body {
+      background: #05080f;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+    }
 
-  /* Grille tricolore animée */
-  #overlay::before {
-    content: ''; position: absolute; inset: 0;
-    background-image:
-      linear-gradient(rgba(255,40,0,0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,200,80,0.04) 1px, transparent 1px);
-    background-size: 38px 38px;
-    animation: gridScroll 9s linear infinite;
-  }
-  @keyframes gridScroll {
-    from { transform: translateY(0); } to { transform: translateY(38px); }
-  }
+    #map { width: 100%; height: 100vh; }
 
-  /* Cercles radar — rouge / orange / vert alternés */
-  .radar-ring {
-    position: absolute; border-radius: 50%;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    animation: radarPulse 5.5s ease-out infinite;
-  }
-  .radar-ring:nth-child(1) { width:170px; height:170px; border:1px solid rgba(255,40,0,0.2);   animation-delay:0s; }
-  .radar-ring:nth-child(2) { width:350px; height:350px; border:1px solid rgba(255,140,0,0.15); animation-delay:1.4s; }
-  .radar-ring:nth-child(3) { width:530px; height:530px; border:1px solid rgba(0,200,80,0.12);  animation-delay:2.8s; }
-  .radar-ring:nth-child(4) { width:710px; height:710px; border:1px solid rgba(255,40,0,0.08);  animation-delay:4.2s; }
-  @keyframes radarPulse { 0%{opacity:.8} 100%{opacity:0} }
+    /* ══════════════════════════════
+       OVERLAY DE CHARGEMENT
+    ══════════════════════════════ */
+    #overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #05080f;
+      overflow: hidden;
+      transition: opacity 0.6s ease;
+    }
+    #overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
 
-  /* Scanlines */
-  .scanline {
-    position:absolute; inset:0; pointer-events:none; z-index:100;
-    background: repeating-linear-gradient(
-      0deg, transparent, transparent 3px,
-      rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px
-    );
-  }
+    /* Grille rouge/verte */
+    #overlay::before {
+      content: ''; position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,40,0,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,200,80,0.04) 1px, transparent 1px);
+      background-size: 38px 38px;
+      animation: gridScroll 9s linear infinite;
+    }
+    @keyframes gridScroll {
+      from { transform: translateY(0); } to { transform: translateY(38px); }
+    }
 
-  /* Coins HUD — rouge en haut, vert en bas */
-  .corner { position:absolute; width:20px; height:20px; border-style:solid; }
-  .corner.tl { top:10px; left:10px;   border-color:rgba(255,50,0,0.6);   border-width:2px 0 0 2px; }
-  .corner.tr { top:10px; right:10px;  border-color:rgba(255,140,0,0.6);  border-width:2px 2px 0 0; }
-  .corner.bl { bottom:10px; left:10px;  border-color:rgba(0,200,80,0.6); border-width:0 0 2px 2px; }
-  .corner.br { bottom:10px; right:10px; border-color:rgba(0,200,80,0.6); border-width:0 2px 2px 0; }
+    /* Cercles radar */
+    .radar-ring {
+      position: absolute; border-radius: 50%;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      animation: radarPulse 5.5s ease-out infinite;
+    }
+    .radar-ring:nth-child(1) { width:170px; height:170px; border:1px solid rgba(255,40,0,0.2);   animation-delay:0s; }
+    .radar-ring:nth-child(2) { width:350px; height:350px; border:1px solid rgba(255,140,0,0.15); animation-delay:1.4s; }
+    .radar-ring:nth-child(3) { width:530px; height:530px; border:1px solid rgba(0,200,80,0.12);  animation-delay:2.8s; }
+    .radar-ring:nth-child(4) { width:710px; height:710px; border:1px solid rgba(255,40,0,0.08);  animation-delay:4.2s; }
+    @keyframes radarPulse { 0%{opacity:.8} 100%{opacity:0} }
 
-  /* ── TITRE ── */
-  .main-title {
-    position: relative; z-index: 20;
-    margin-bottom: 10px;
-    text-align: center;
-  }
-  .main-title h1 {
-    font-size: 20px; letter-spacing: 6px; text-transform: uppercase;
-    font-weight: 700;
-    background: linear-gradient(90deg, #ff3300, #ff9900, #00e85a);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    background-clip: text;
-    filter: drop-shadow(0 0 12px rgba(255,100,0,0.4));
-    animation: titleShimmer 3s ease infinite;
-    background-size: 200%;
-  }
-  @keyframes titleShimmer {
-    0%   { background-position: 0% }
-    50%  { background-position: 100% }
-    100% { background-position: 0% }
-  }
-  .main-title p {
-    font-size: 9px; letter-spacing: 3px; color: rgba(0,200,80,0.5);
-    margin-top: 4px; text-transform: uppercase;
-  }
+    /* Scanlines */
+    .scanline {
+      position: absolute; inset: 0; pointer-events: none; z-index: 2;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 3px,
+        rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px
+      );
+    }
 
-  /* ── Carte France ── */
-  .france-wrap {
-    position: relative; width: 250px; height: 250px; flex-shrink: 0;
-  }
-  #france-svg {
-    width:100%; height:100%;
-    filter: drop-shadow(0 0 10px rgba(255,60,0,0.25)) drop-shadow(0 0 20px rgba(0,180,60,0.1));
-  }
-  .france-path {
-    fill: rgba(255,30,0,0.05);
-    stroke: url(#franceGrad);
-    stroke-width: 1.8;
-    stroke-linejoin: round; stroke-linecap: round;
-    stroke-dasharray: 2000; stroke-dashoffset: 2000;
-    animation: drawBorder 3.2s ease forwards;
-  }
-  .france-path.corse {
-    stroke-dasharray: 300; stroke-dashoffset: 300;
-    animation: drawBorder 1.5s ease 3s forwards;
-  }
-  @keyframes drawBorder { to { stroke-dashoffset: 0; } }
+    /* Coins HUD */
+    .corner { position:absolute; width:20px; height:20px; border-style:solid; z-index: 3; }
+    .corner.tl { top:10px; left:10px;   border-color:rgba(255,50,0,0.6);  border-width:2px 0 0 2px; }
+    .corner.tr { top:10px; right:10px;  border-color:rgba(255,140,0,0.6); border-width:2px 2px 0 0; }
+    .corner.bl { bottom:10px; left:10px;  border-color:rgba(0,200,80,0.6); border-width:0 0 2px 2px; }
+    .corner.br { bottom:10px; right:10px; border-color:rgba(0,200,80,0.6); border-width:0 2px 2px 0; }
 
-  /* Traînée canvas */
-  #trail-canvas {
-    position:absolute; inset:0; width:100%; height:100%;
-    pointer-events:none; z-index:9;
-  }
+    /* ── Titre ── */
+    .main-title {
+      position: relative; z-index: 10;
+      margin-bottom: 8px; text-align: center;
+    }
+    .main-title h1 {
+      font-size: 20px; letter-spacing: 6px; text-transform: uppercase; font-weight: 700;
+      background: linear-gradient(90deg, #ff3300, #ff9900, #00e85a);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; background-size: 200%;
+      animation: titleShimmer 3s ease infinite;
+      filter: drop-shadow(0 0 10px rgba(255,100,0,0.3));
+    }
+    @keyframes titleShimmer {
+      0%{background-position:0%} 50%{background-position:100%} 100%{background-position:0%}
+    }
+    .main-title p {
+      font-size: 9px; letter-spacing: 3px; color: rgba(0,200,80,0.5);
+      margin-top: 3px; text-transform: uppercase;
+    }
 
-  /* ── Fusée ── */
-  #rocket-wrap {
-    position:absolute; width:28px; height:28px; z-index:10; pointer-events:none;
-    transition: left .52s cubic-bezier(.4,0,.2,1),
-                top  .52s cubic-bezier(.4,0,.2,1),
-                transform .52s ease;
-    filter: drop-shadow(0 0 6px #ff2200) drop-shadow(0 0 16px #ff6600);
-  }
+    /* Séparateur */
+    .sep {
+      width:200px; height:1px; position: relative; z-index: 10;
+      background: linear-gradient(90deg, transparent, #ff4400, #ffaa00, #00dd55, transparent);
+      opacity:.5; margin-bottom: 4px;
+    }
 
-  /* Ping rebond — couleur alternée */
-  .ping {
-    position:absolute; width:8px; height:8px; border-radius:50%;
-    transform:translate(-50%,-50%); pointer-events:none; z-index:11;
-    animation: pingOut .7s ease-out forwards;
-  }
-  @keyframes pingOut {
-    0%  { transform:translate(-50%,-50%) scale(1); opacity:1; }
-    100%{ transform:translate(-50%,-50%) scale(5); opacity:0; }
-  }
+    /* ── Carte France + fusée ── */
+    .france-wrap {
+      position: relative; width:250px; height:250px;
+      flex-shrink: 0; z-index: 10;
+    }
+    #france-svg {
+      width:100%; height:100%;
+      filter: drop-shadow(0 0 10px rgba(255,60,0,0.25)) drop-shadow(0 0 20px rgba(0,180,60,0.1));
+    }
+    .france-path {
+      fill: rgba(255,30,0,0.05);
+      stroke: url(#franceGrad);
+      stroke-width: 1.8; stroke-linejoin:round; stroke-linecap:round;
+      stroke-dasharray: 2000; stroke-dashoffset: 2000;
+      animation: drawBorder 3.2s ease forwards;
+    }
+    .france-path.corse {
+      stroke-dasharray:300; stroke-dashoffset:300;
+      animation: drawBorder 1.5s ease 3s forwards;
+    }
+    @keyframes drawBorder { to { stroke-dashoffset: 0; } }
 
-  /* ── HUD ── */
-  .hud {
-    position:relative; z-index:20;
-    margin-top:12px;
-    display:flex; flex-direction:column; align-items:center; gap:10px;
-    width:300px;
-  }
+    #trail-canvas {
+      position:absolute; inset:0; width:100%; height:100%;
+      pointer-events:none; z-index:9;
+    }
 
-  .hud-title {
-    font-size:9px; letter-spacing:4px; text-transform:uppercase;
-    color:rgba(255,140,0,.8);
-    animation: blink 2.2s step-end infinite;
-  }
-  @keyframes blink { 50%{opacity:.15} }
+    #rocket-wrap {
+      position:absolute; width:28px; height:28px; z-index:10; pointer-events:none;
+      transition: left .52s cubic-bezier(.4,0,.2,1),
+                  top  .52s cubic-bezier(.4,0,.2,1),
+                  transform .52s ease;
+      filter: drop-shadow(0 0 6px #ff2200) drop-shadow(0 0 16px #ff6600);
+    }
 
-  .steps { display:flex; flex-direction:column; gap:4px; width:100%; }
+    .ping {
+      position:absolute; width:8px; height:8px; border-radius:50%;
+      transform:translate(-50%,-50%); pointer-events:none; z-index:11;
+      animation: pingOut .7s ease-out forwards;
+    }
+    @keyframes pingOut {
+      0%  { transform:translate(-50%,-50%) scale(1); opacity:1; }
+      100%{ transform:translate(-50%,-50%) scale(5); opacity:0; }
+    }
 
-  /* Étapes inactives */
-  .step {
-    display:flex; align-items:center; gap:10px;
-    padding:7px 12px;
-    border:1px solid rgba(255,255,255,0.06); border-radius:3px;
-    background:rgba(10,15,10,.6);
-    opacity:.25; font-size:11px; letter-spacing:1.5px;
-    color: #4a7a4a;
-    transition:opacity .4s, border-color .4s, background .4s, color .4s;
-  }
+    /* ── HUD ── */
+    .hud {
+      position:relative; z-index:10;
+      margin-top:12px;
+      display:flex; flex-direction:column; align-items:center; gap:10px;
+      width:300px;
+    }
 
-  /* Étape active → vert vif */
-  .step.active {
-    opacity:1;
-    border-color: rgba(0,220,80,.55);
-    background: rgba(0,180,60,.07);
-    color: #00e85a;
-  }
-  /* Étape done → vert moyen */
-  .step.done {
-    opacity:.55;
-    border-color: rgba(0,180,60,.2);
-    color: #00bb44;
-  }
-  /* Étape erreur → rouge */
-  .step.error {
-    opacity:1;
-    border-color: rgba(255,40,40,.65);
-    background: rgba(255,0,0,.08);
-    color: #ff4444;
-  }
+    .hud-title {
+      font-size:9px; letter-spacing:4px; text-transform:uppercase;
+      color:rgba(255,140,0,.8);
+      animation: blink 2.2s step-end infinite;
+      transition: color 0.4s;
+    }
+    @keyframes blink { 50%{opacity:.15} }
 
-  .step-dot { width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0; }
-  .step.active .step-dot { animation: dotPulse .85s ease infinite alternate; }
-  @keyframes dotPulse {
-    from { box-shadow:0 0 0 0 rgba(0,220,80,.8); }
-    to   { box-shadow:0 0 0 7px rgba(0,220,80,0); }
-  }
+    .steps { display:flex; flex-direction:column; gap:4px; width:100%; }
 
-  /* Barre de progression : rouge → orange → vert */
-  .prog-wrap { width:100%; height:3px; background:rgba(255,255,255,.04); border-radius:99px; overflow:hidden; }
-  .prog-fill {
-    height:100%; width:0%;
-    background: linear-gradient(90deg, #cc0000, #ff7700, #00dd55);
-    background-size: 300%;
-    border-radius:99px; transition:width .5s ease;
-    box-shadow: 0 0 10px #ff5500;
-    animation: progColor 4s linear infinite;
-  }
-  @keyframes progColor {
-    0%   { background-position: 0%; }
-    100% { background-position: 300%; }
-  }
+    .step {
+      display:flex; align-items:center; gap:10px;
+      padding:7px 12px;
+      border:1px solid rgba(255,255,255,0.06); border-radius:3px;
+      background:rgba(10,15,10,.6);
+      opacity:.25; font-size:11px; letter-spacing:1.5px; color:#4a7a4a;
+      transition: opacity .4s, border-color .4s, background .4s, color .4s;
+    }
+    .step.active {
+      opacity:1; border-color:rgba(0,220,80,.55);
+      background:rgba(0,180,60,.07); color:#00e85a;
+    }
+    .step.done   { opacity:.55; border-color:rgba(0,180,60,.2); color:#00bb44; }
+    .step.error  { opacity:1; border-color:rgba(255,40,40,.65); background:rgba(255,0,0,.08); color:#ff4444; }
 
-  /* Note bas */
-  .ov-note {
-    font-size:10px; letter-spacing:2px; text-align:center; min-height:14px;
-    color: rgba(0,200,70,.45);
-  }
+    .step-dot { width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0; }
+    .step.active .step-dot { animation: dotPulse .85s ease infinite alternate; }
+    @keyframes dotPulse {
+      from { box-shadow:0 0 0 0 rgba(0,220,80,.8); }
+      to   { box-shadow:0 0 0 7px rgba(0,220,80,0); }
+    }
 
-  #btn-retry {
-    display:none; padding:8px 22px; background:transparent;
-    border:1px solid rgba(255,60,60,.55); border-radius:3px;
-    color:#ff5555; cursor:pointer;
-    font-family:'Courier New',monospace; font-size:11px; letter-spacing:2px;
-    transition:background .2s;
-  }
-  #btn-retry:hover { background:rgba(255,40,40,.12); }
+    .prog-wrap { width:100%; height:3px; background:rgba(255,255,255,.04); border-radius:99px; overflow:hidden; }
+    .prog-fill {
+      height:100%; width:0%;
+      background: linear-gradient(90deg, #cc0000, #ff7700, #00dd55);
+      background-size:300%; border-radius:99px;
+      transition: width .5s ease;
+      box-shadow:0 0 10px #ff5500;
+      animation: progColor 4s linear infinite;
+    }
+    @keyframes progColor { 0%{background-position:0%} 100%{background-position:300%} }
 
-  /* Séparateur décoratif sous le titre */
-  .sep {
-    width: 200px; height: 1px;
-    background: linear-gradient(90deg, transparent, #ff4400, #ffaa00, #00dd55, transparent);
-    margin-bottom: 2px;
-    opacity: 0.5;
-  }
-</style>
+    .ov-note {
+      font-size:10px; letter-spacing:2px; text-align:center; min-height:14px;
+      color:rgba(0,200,70,.45);
+    }
+
+    /* Bouton retry */
+    #btn-retry {
+      display:none; padding:8px 22px; background:transparent;
+      border:1px solid rgba(255,60,60,.55); border-radius:3px;
+      color:#ff5555; cursor:pointer;
+      font-family:'Courier New',monospace; font-size:11px; letter-spacing:2px;
+      transition:background .2s;
+    }
+    #btn-retry:hover { background:rgba(255,40,40,.12); }
+
+    /* ── Bouton flottant carte ── */
+    #btn-loc {
+      position:fixed; bottom:20px; right:20px; z-index:1000;
+      background:#e74c3c; color:#fff; border:none; border-radius:50px;
+      padding:11px 18px; font-size:13px; font-weight:600;
+      cursor:pointer; box-shadow:0 4px 14px rgba(231,76,60,0.4);
+      font-family:'Segoe UI',sans-serif;
+      transition:background .2s, transform .2s;
+    }
+    #btn-loc:hover { background:#c0392b; transform:translateY(-2px); }
+
+    /* Tooltip armoires */
+    .tip-arm {
+      background:rgba(18,18,26,0.92) !important; color:#fff !important;
+      border:1px solid rgba(231,76,60,0.35) !important;
+      border-radius:5px !important; padding:3px 8px !important;
+      font-size:11px !important; font-weight:600 !important;
+      box-shadow:0 2px 8px rgba(0,0,0,0.4) !important; white-space:nowrap !important;
+    }
+    .tip-arm::before { border-top-color:rgba(18,18,26,0.92) !important; }
+
+    @keyframes fadeInUp {
+      from { opacity:0; transform:translateX(-50%) translateY(10px); }
+      to   { opacity:1; transform:translateX(-50%) translateY(0); }
+    }
+  </style>
 </head>
 <body>
-<div id="overlay">
-  <div class="radar-ring"></div><div class="radar-ring"></div>
-  <div class="radar-ring"></div><div class="radar-ring"></div>
-  <div class="scanline"></div>
-  <div class="corner tl"></div><div class="corner tr"></div>
-  <div class="corner bl"></div><div class="corner br"></div>
 
-  <!-- TITRE -->
-  <div class="main-title">
-    <h1>📦 Carte Armoires</h1>
-    <p>Système de localisation terrain v2.0</p>
-  </div>
-  <div class="sep"></div>
+  <!-- ════ OVERLAY ════ -->
+  <div id="overlay">
+    <div class="radar-ring"></div><div class="radar-ring"></div>
+    <div class="radar-ring"></div><div class="radar-ring"></div>
+    <div class="scanline"></div>
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
 
-  <!-- France + fusée -->
-  <div class="france-wrap" id="france-wrap">
-    <canvas id="trail-canvas" width="250" height="250"></canvas>
+    <!-- Titre -->
+    <div class="main-title">
+      <h1>📦 Carte Armoires</h1>
+      <p>Système de localisation terrain v2.0</p>
+    </div>
+    <div class="sep"></div>
 
-    <svg id="france-svg" viewBox="0 0 260 260" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="franceGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%"   stop-color="#ff3300"/>
-          <stop offset="40%"  stop-color="#ff8800"/>
-          <stop offset="100%" stop-color="#00dd55"/>
-        </linearGradient>
-      </defs>
-      <!-- Contour France métropolitaine -->
-      <path class="france-path" d="
-        M 127.6,12.0 L 126.0,23.2 L 105.1,32.9 L 98.7,45.7
-        L 65.0,34.5 L 68.2,61.8 L 16.8,55.3 L 12.0,77.8
-        L 36.1,90.7 L 37.7,101.9 L 47.3,97.1 L 69.8,135.6
-        L 65.0,220.7 L 150.1,243.2 L 156.5,235.2 L 161.3,240.0
-        L 159.7,223.9 L 174.1,211.1 L 223.9,220.7 L 246.4,201.4
-        L 248.0,185.4 L 235.2,180.6 L 233.6,132.4 L 217.5,122.8
-        L 240.0,98.7 L 248.0,50.5 L 201.4,39.3 L 188.6,23.2
-        L 177.4,26.4 L 179.0,16.8 L 156.5,12.0 Z
-      "/>
-      <!-- Corse -->
-      <path class="france-path corse" d="
-        M 244.8,214.3 L 240.0,217.5 L 238.4,222.3 L 236.8,222.3
-        L 231.9,225.5 L 227.1,230.3 L 227.1,243.2 L 228.7,244.8
-        L 228.7,248.0 L 235.2,248.0 L 231.9,240.0 L 231.9,233.6
-        L 235.2,230.3 L 241.6,227.1 L 244.8,230.3 L 246.4,240.0
-        L 243.2,248.0 L 248.0,248.0 L 248.0,217.5 Z
-      "/>
-    </svg>
-
-    <!-- Fusée SVG -->
-    <div id="rocket-wrap">
-      <svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg" width="28" height="28">
-        <path d="M14,3 C12,7 10,11 10,16 L10,21 L14,23 L18,21 L18,16 C18,11 16,7 14,3 Z"
-              fill="#cc1100" stroke="#ff4422" stroke-width="0.5"/>
-        <path d="M14,3 C13,5 11,8 11,11 L17,11 C17,8 15,5 14,3 Z"
-              fill="#ff3311" stroke="#ff6644" stroke-width="0.4"/>
-        <path d="M10,17 L5,24 L10,22 Z" fill="#991100" stroke="#ff3300" stroke-width="0.5"/>
-        <path d="M18,17 L23,24 L18,22 Z" fill="#991100" stroke="#ff3300" stroke-width="0.5"/>
-        <rect x="10" y="14" width="8" height="1.4" fill="rgba(255,180,80,0.4)" rx="0.5"/>
-        <circle cx="14" cy="13" r="2.2" fill="none" stroke="#ff9966" stroke-width="0.7"/>
-        <circle cx="14" cy="13" r="1.1" fill="rgba(255,200,120,0.35)"/>
-        <ellipse cx="14" cy="24.5" rx="2.8" ry="3.8" fill="rgba(255,120,0,0.8)">
-          <animate attributeName="ry" values="3.8;2.2;4.2;2.8;3.8" dur="0.15s" repeatCount="indefinite"/>
-          <animate attributeName="opacity" values="0.8;0.5;1;0.7;0.8" dur="0.15s" repeatCount="indefinite"/>
-        </ellipse>
-        <ellipse cx="14" cy="23.5" rx="1.3" ry="2.0" fill="rgba(255,245,180,0.95)">
-          <animate attributeName="ry" values="2.0;1.2;2.3;1.5;2.0" dur="0.15s" repeatCount="indefinite"/>
-        </ellipse>
+    <!-- France + fusée -->
+    <div class="france-wrap" id="france-wrap">
+      <canvas id="trail-canvas" width="250" height="250"></canvas>
+      <svg id="france-svg" viewBox="0 0 260 260" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="franceGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#ff3300"/>
+            <stop offset="40%"  stop-color="#ff8800"/>
+            <stop offset="100%" stop-color="#00dd55"/>
+          </linearGradient>
+        </defs>
+        <path class="france-path" d="
+          M 127.6,12.0 L 126.0,23.2 L 105.1,32.9 L 98.7,45.7
+          L 65.0,34.5 L 68.2,61.8 L 16.8,55.3 L 12.0,77.8
+          L 36.1,90.7 L 37.7,101.9 L 47.3,97.1 L 69.8,135.6
+          L 65.0,220.7 L 150.1,243.2 L 156.5,235.2 L 161.3,240.0
+          L 159.7,223.9 L 174.1,211.1 L 223.9,220.7 L 246.4,201.4
+          L 248.0,185.4 L 235.2,180.6 L 233.6,132.4 L 217.5,122.8
+          L 240.0,98.7 L 248.0,50.5 L 201.4,39.3 L 188.6,23.2
+          L 177.4,26.4 L 179.0,16.8 L 156.5,12.0 Z
+        "/>
+        <path class="france-path corse" d="
+          M 244.8,214.3 L 240.0,217.5 L 238.4,222.3 L 236.8,222.3
+          L 231.9,225.5 L 227.1,230.3 L 227.1,243.2 L 228.7,244.8
+          L 228.7,248.0 L 235.2,248.0 L 231.9,240.0 L 231.9,233.6
+          L 235.2,230.3 L 241.6,227.1 L 244.8,230.3 L 246.4,240.0
+          L 243.2,248.0 L 248.0,248.0 L 248.0,217.5 Z
+        "/>
       </svg>
+      <div id="rocket-wrap">
+        <svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg" width="28" height="28">
+          <path d="M14,3 C12,7 10,11 10,16 L10,21 L14,23 L18,21 L18,16 C18,11 16,7 14,3 Z"
+                fill="#cc1100" stroke="#ff4422" stroke-width="0.5"/>
+          <path d="M14,3 C13,5 11,8 11,11 L17,11 C17,8 15,5 14,3 Z"
+                fill="#ff3311" stroke="#ff6644" stroke-width="0.4"/>
+          <path d="M10,17 L5,24 L10,22 Z" fill="#991100" stroke="#ff3300" stroke-width="0.5"/>
+          <path d="M18,17 L23,24 L18,22 Z" fill="#991100" stroke="#ff3300" stroke-width="0.5"/>
+          <rect x="10" y="14" width="8" height="1.4" fill="rgba(255,180,80,0.4)" rx="0.5"/>
+          <circle cx="14" cy="13" r="2.2" fill="none" stroke="#ff9966" stroke-width="0.7"/>
+          <circle cx="14" cy="13" r="1.1" fill="rgba(255,200,120,0.35)"/>
+          <ellipse cx="14" cy="24.5" rx="2.8" ry="3.8" fill="rgba(255,120,0,0.8)">
+            <animate attributeName="ry" values="3.8;2.2;4.2;2.8;3.8" dur="0.15s" repeatCount="indefinite"/>
+            <animate attributeName="opacity" values="0.8;0.5;1;0.7;0.8" dur="0.15s" repeatCount="indefinite"/>
+          </ellipse>
+          <ellipse cx="14" cy="23.5" rx="1.3" ry="2.0" fill="rgba(255,245,180,0.95)">
+            <animate attributeName="ry" values="2.0;1.2;2.3;1.5;2.0" dur="0.15s" repeatCount="indefinite"/>
+          </ellipse>
+        </svg>
+      </div>
+    </div>
+
+    <!-- HUD étapes -->
+    <div class="hud">
+      <div class="hud-title" id="hud-title">▸ ACQUISITION GPS EN COURS ◂</div>
+      <div class="steps">
+        <div class="step" id="s1"><div class="step-dot"></div><span id="s1-label">01 — INITIALISATION DE LA CARTE</span></div>
+        <div class="step" id="s2"><div class="step-dot"></div><span id="s2-label">02 — TRIANGULATION GPS</span></div>
+        <div class="step" id="s3"><div class="step-dot"></div><span id="s3-label">03 — CHARGEMENT DES ARMOIRES</span></div>
+      </div>
+      <div class="prog-wrap"><div class="prog-fill" id="prog"></div></div>
+      <div class="ov-note" id="ov-note">INITIALISATION SYSTÈME…</div>
+      <button id="btn-retry" onclick="demanderGeoloc()">⟳ RÉESSAYER LOCALISATION</button>
     </div>
   </div>
 
-  <!-- HUD -->
-  <div class="hud">
-    <div class="hud-title" id="hud-title">▸ ACQUISITION GPS EN COURS ◂</div>
-    <div class="steps">
-      <div class="step active" id="s1"><div class="step-dot"></div><span id="s1-label">01 — INITIALISATION DE LA CARTE</span></div>
-      <div class="step"        id="s2"><div class="step-dot"></div><span id="s2-label">02 — TRIANGULATION GPS</span></div>
-      <div class="step"        id="s3"><div class="step-dot"></div><span id="s3-label">03 — CHARGEMENT DES ARMOIRES</span></div>
-    </div>
-    <div class="prog-wrap"><div class="prog-fill" id="prog"></div></div>
-    <div class="ov-note" id="ov-note">INITIALISATION SYSTÈME…</div>
-    <button id="btn-retry" onclick="retryGeo()">⟳ RÉESSAYER LOCALISATION</button>
-  </div>
-</div>
+  <!-- ════ CARTE ════ -->
+  <div id="map"></div>
+  <button id="btn-loc" onclick="recentrer()">📍 Me localiser</button>
 
-<script>
-const pts = [
-  [127.6,12.0],[126.0,23.2],[105.1,32.9],[98.7,45.7],
-  [65.0,34.5],[68.2,61.8],[16.8,55.3],[12.0,77.8],
-  [36.1,90.7],[37.7,101.9],[47.3,97.1],[69.8,135.6],
-  [65.0,220.7],[95.5,227.1],[150.1,243.2],[156.5,235.2],
-  [161.3,240.0],[159.7,223.9],[174.1,211.1],[223.9,220.7],
-  [246.4,201.4],[248.0,185.4],[235.2,180.6],[233.6,132.4],
-  [217.5,122.8],[240.0,98.7],[248.0,50.5],[201.4,39.3],
-  [188.6,23.2],[177.4,26.4],[179.0,16.8],[156.5,12.0]
-];
-
-// Couleurs de ping qui alternent rouge / orange / vert
-const pingColors = ['#ff3300','#ff8800','#00dd55','#ff5500','#00cc44'];
-let pingIdx = 0;
-
-const rocketWrap = document.getElementById('rocket-wrap');
-const wrap       = document.getElementById('france-wrap');
-const canvas     = document.getElementById('trail-canvas');
-const ctx        = canvas.getContext('2d');
-const prog       = document.getElementById('prog');
-const ovNote     = document.getElementById('ov-note');
-const btnRetry   = document.getElementById('btn-retry');
-const hudTitle   = document.getElementById('hud-title');
-
-let idx=0, timer=null, trail=[];
-
-function angleTo(a,b){ return Math.atan2(b[1]-a[1],b[0]-a[0])*180/Math.PI+90; }
-
-function moveRocket(i){
-  const pt=pts[i], prev=pts[(i-1+pts.length)%pts.length];
-  rocketWrap.style.left      = (pt[0]-14)+'px';
-  rocketWrap.style.top       = (pt[1]-14)+'px';
-  rocketWrap.style.transform = `rotate(${angleTo(prev,pt)}deg)`;
-  trail.push({x:pt[0],y:pt[1]});
-  if(trail.length>28) trail.shift();
-  drawTrail();
-  spawnPing(pt[0],pt[1]);
-}
-
-// Traînée dégradée rouge→orange→vert selon position dans la queue
-function drawTrail(){
-  ctx.clearRect(0,0,250,250);
-  for(let i=1;i<trail.length;i++){
-    const a=trail[i-1], b=trail[i];
-    const t=i/trail.length;
-    // Rouge au début, vert à la tête
-    const r = Math.round(255*(1-t*0.6));
-    const g = Math.round(220*t);
-    const al = t*0.75;
-    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
-    ctx.strokeStyle = `rgba(${r},${g},0,${al})`;
-    ctx.lineWidth = 2.2;
-    ctx.shadowColor = t>0.7?'#00dd55':'#ff5500';
-    ctx.shadowBlur = 7;
-    ctx.stroke();
-  }
-}
-
-function spawnPing(x,y){
-  const p=document.createElement('div');
-  p.className='ping';
-  p.style.left=x+'px'; p.style.top=y+'px';
-  p.style.background=pingColors[pingIdx%pingColors.length];
-  pingIdx++;
-  wrap.appendChild(p);
-  setTimeout(()=>p.remove(),700);
-}
-
-function startBounce(){
-  moveRocket(idx);
-  timer=setInterval(()=>{ idx=(idx+1)%pts.length; moveRocket(idx); },300);
-}
-function stopBounce(){ clearInterval(timer); timer=null; }
-
-function setStep(n,note){
-  for(let i=1;i<n;i++){
-    const el=document.getElementById('s'+i);
-    el.classList.remove('active','error'); el.classList.add('done');
-  }
-  const cur=document.getElementById('s'+n);
-  if(cur){ cur.classList.remove('done','error'); cur.classList.add('active'); }
-  prog.style.width=({1:'10',2:'42',3:'80'}[n]||'0')+'%';
-  if(note) ovNote.textContent=note;
-}
-
-function stepError(label,note){
-  const el=document.getElementById('s2');
-  el.classList.remove('active','done'); el.classList.add('error');
-  document.getElementById('s2-label').textContent=label;
-  ovNote.textContent=note;
-  btnRetry.style.display='block';
-  hudTitle.textContent='▸ SIGNAL GPS PERDU ◂';
-  hudTitle.style.color='rgba(255,60,60,.85)';
-}
-
-function retryGeo(){
-  btnRetry.style.display='none';
-  const el=document.getElementById('s2');
-  el.classList.remove('error'); el.classList.add('active');
-  document.getElementById('s2-label').textContent='02 — TRIANGULATION GPS';
-  hudTitle.textContent='▸ ACQUISITION GPS EN COURS ◂';
-  hudTitle.style.color='rgba(255,140,0,.8)';
-  ovNote.textContent='NOUVELLE TENTATIVE…';
-}
-
-// Démo
-startBounce();
-setStep(1,'INITIALISATION CARTE…');
-setTimeout(()=>setStep(2,'TRIANGULATION EN COURS…'),1400);
-setTimeout(()=>{ setStep(3,'CHARGEMENT DES ARMOIRES…'); prog.style.width='80%'; },4400);
-setTimeout(()=>{
-  prog.style.width='100%';
-  ovNote.textContent='✓ 47 ARMOIRES CHARGÉES — RAYON 100 KM';
-  hudTitle.textContent='▸ SYSTÈME OPÉRATIONNEL ◂';
-  hudTitle.style.color='rgba(0,220,80,.85)';
-  stopBounce();
-  rocketWrap.style.left='119px'; rocketWrap.style.top='118px';
-  rocketWrap.style.transform='rotate(0deg) scale(1.3)';
-},7200);
-
-// Bouton test erreur
-const testBtn=document.createElement('button');
-testBtn.textContent='[ TESTER ERREUR GPS ]';
-testBtn.style.cssText='position:fixed;bottom:10px;left:50%;transform:translateX(-50%);background:transparent;border:1px solid rgba(255,60,60,0.18);color:rgba(255,80,60,0.3);font-family:Courier New;font-size:10px;padding:5px 14px;cursor:pointer;border-radius:2px;letter-spacing:1px;z-index:999;';
-testBtn.onclick=()=>{
-  testBtn.remove();
-  [1,2,3].forEach(i=>{const el=document.getElementById('s'+i);el.classList.remove('active','done','error');});
-  document.getElementById('s1').classList.add('done');
-  document.getElementById('s2').classList.add('active');
-  document.getElementById('s2-label').textContent='02 — TRIANGULATION GPS';
-  btnRetry.style.display='none';
-  prog.style.width='42%';
-  if(!timer) startBounce();
-  setTimeout(()=>stepError('02 — ✗ SIGNAL GPS PERDU','📡 AUCUN SIGNAL DÉTECTÉ'),800);
-};
-document.body.appendChild(testBtn);
-</script>
+  <script src="script.js"></script>
 </body>
 </html>
